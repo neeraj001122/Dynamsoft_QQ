@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <link rel="stylesheet" href="web.css">
+    <script
+      type="text/javascript"
+      src="Resources/dynamsoft.webtwain.initiate.js"
+    ></script>
+    <script
+      type="text/javascript"
+      src="Resources/dynamsoft.webtwain.config.js"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/dynamsoft-capture-vision-bundle@2.4.2100/dist/dcv.bundle.js"></script>
+  </head>
+  <body>
+    <div>
+      SelectSource:<select
+        size="1"
+        id="source"
+        style="position: relative; width: 220px"
+      ></select>
+      <br />
+    </div>
+    <div>
+    </div>
+    <div>
+      <label> <input type="checkbox" id="ShowUI" />Show UI<br /></label>
+    </div>
+    <input class="save-button" type="button" value="Scan" onclick="AcquireImage();" />
+    <button id="start" onclick="startDetecting()">Start Detection</button>
+    <button id="edit" style="display: none;" onclick="edit()" >Edit</button>
+    <button id="loadView" style="display: none;" onclick="loadInViewer()">load</button>
+    <button id="closeCamera" style="display: none;" onclick="closeCamera()">CloseCamera</button>
+    <div style="display: flex; width: 50%; gap: 50px;" >
+    <div id="dwtcontrolContainer" style="width: 350px; height: 380px;"></div>
+    <div id="cameraViewContainer" style="width: 50vw; height: 45vh; margin-top: 10px; display: none"></div>
+    <div id="div-image-container" style="display: none; width: 100%; height: 70vh"></div>
+  </div>
+    <script>
+      
+      var DWObject, deviceList;
+      let router;
+      let cameraEnhancer;
+      let items;
+      let originalImage;
+      let layer;
+      let blob;
+
+      let editButton = document.getElementById('edit')
+      let startDetectionButton = document.getElementById('start')
+      let loadButton = document.getElementById('loadView')
+      let closeCameraButton = document.getElementById('closeCamera')
+
+      const imageEditorViewContainer = document.querySelector("#div-image-container");
+      const normalizedImageContainer = document.querySelector("#normalized-result");
+      const cameraViewContainer = document.querySelector(
+            "#cameraViewContainer"
+        );
+    
+
+      //init DDN license and DWT license
+      Dynamsoft.License.LicenseManager.initLicense(
+                ""
+        );
+
+       
+        
+
+      function Dynamsoft_OnReady() {
+
+        DWObject = Dynamsoft.DWT.GetWebTwain("dwtcontrolContainer");
+
+        
+        if (DWObject) {
+          DWObject.Viewer.setViewMode(2,2); //viewport adjustment
+          DWObject.Viewer.showPageNumber = true;
+
+          deviceList = [];
+          DWObject.GetDevicesAsync()
+            .then(function (devices) {
+              for (var i = 0; i < devices.length; i++) {
+                document
+                  .getElementById("source")
+                  .options.add(new Option(devices[i].displayName, i));
+                deviceList.push(devices[i]);
+              }
+            })
+            .catch(function (exp) {
+              alert(exp.message);
+            });
+        }
+
+      }
+
+
+      function AcquireImage() {
+        if (DWObject) {
+
+          var ddlSource = document.getElementById("source");
+          if (ddlSource) {
+            DWObject.SelectDeviceAsync(deviceList[ddlSource.selectedIndex])
+              .then(function () {
+                return DWObject.AcquireImageAsync({
+                  IfShowUI: document.getElementById("ShowUI").checked,
+                  IfDisableSourceAfterAcquire: true,
+                });
+              })
+              .then(function () {
+                return DWObject.CloseSourceAsync();
+              })
+              .catch(function (exp) {
+                alert(exp.message);
+              });
+          }
+
+        }
+      }
+
+      //DDN image capture part
+
+        (async function() {
+            router = await Dynamsoft.CVR.CaptureVisionRouter.createInstance();
+            let view = await Dynamsoft.DCE.CameraView.createInstance();
+            cameraEnhancer = await Dynamsoft.DCE.CameraEnhancer.createInstance(
+                view
+            );
+            imageEditorView = await Dynamsoft.DCE.ImageEditorView.createInstance(imageEditorViewContainer);
+            layer = imageEditorView.createDrawingLayer();
+            cameraViewContainer.append(view.getUIElement());
+            router.setInput(cameraEnhancer);
+
+            let newSettings = await router.getSimplifiedSettings("DetectDocumentBoundaries_Default");
+            newSettings.capturedResultItemTypes = Dynamsoft.Core.EnumCapturedResultItemType.CRIT_DETECTED_QUAD | Dynamsoft.Core.EnumCapturedResultItemType.CRIT_ORIGINAL_IMAGE;
+            await router.updateSettings("DetectDocumentBoundaries_Default", newSettings)
+
+            router.addResultReceiver({ onCapturedResultReceived: (result) => {
+              //  console.log(result);
+                if (result.items.length > 1) {
+                    items = result.items;
+                }
+
+                const originalImage = result.items.filter((item) => item.type === 1);
+                originalImageData = originalImage.length && originalImage[0].imageData;
+
+          }});  
+        })();
+
+
+
+        function edit() {
+            if (!cameraEnhancer.isOpen() || items.length <= 1) return;
+            /* Stops the detection task since we assume we have found a good boundary. */
+            router.stopCapturing();
+            /* Hides the cameraView and shows the imageEditorView. */
+            cameraViewContainer.style.display = "none";
+            imageEditorViewContainer.style.display = "block";
+            /* Draws the image on the imageEditorView first. */
+            imageEditorView.setOriginalImage(originalImageData);
+            quads = [];
+            /* Draws the document boundary (quad) over the image. */
+            for (let i = 0; i < items.length; i++) {
+              if (items[i].type === Dynamsoft.Core.EnumCapturedResultItemType.CRIT_ORIGINAL_IMAGE) continue;
+              const points = items[i].location.points;
+              const quad = new Dynamsoft.DCE.QuadDrawingItem({ points });
+              quads.push(quad);
+              layer.addDrawingItems(quads);
+            }
+
+            editButton.style.display = "none"
+            loadButton.style.display = "inline"
+
+        }
+
+          async function loadInViewer  () {
+              /* Gets the selected quadrilateral. */
+          let seletedItems = imageEditorView.getSelectedDrawingItems();
+          let quad;
+          if (seletedItems.length) {
+            quad = seletedItems[0].getQuad();
+          } else {
+            quad = items[1].location;
+          }
+          const isPointOverBoundary = (point) => {
+            if (point.x < 0 ||
+              point.x > originalImageData.width ||
+              point.y < 0 ||
+              point.y > originalImageData.height) {
+              return true;
+            } else {
+              return false;
+            }
+          };
+          /* Check if the points beyond the boundaries of the image. */
+          if (quad.points.some(point => isPointOverBoundary(point))) {
+            alert("The document boundaries extend beyond the boundaries of the image and cannot be used to normalize the document.");
+            return;
+          }
+
+          /* Hides the imageEditorView. */
+          /**
+           * 
+           * Sets the coordinates of the ROI (region of interest)
+           * in the built-in template "NormalizeDocument_Default".
+           */
+          let newSettings = await router.getSimplifiedSettings("NormalizeDocument_Default");
+          newSettings.roiMeasuredInPercentage = 0;
+          newSettings.roi.points = quad.points;
+          await router.updateSettings("NormalizeDocument_Default", newSettings);
+          /* Executes the normalization and shows the result on the page. */
+          let normalizeResult = await router.capture(originalImageData, "NormalizeDocument_Default");
+
+          
+           normalizeResult.items[0].toBlob().then((result) => {
+            blob = result;
+            DWObject.LoadImageFromBinary(result, () => {
+              console.log('lets go')
+            }),(err,error) => {
+              console.log(err,error)
+            }
+           })    
+
+           imageEditorViewContainer.style.display = "none";  
+           cameraViewContainer.style.display = "inline-block";
+           loadButton.style.display = 'none'
+            editButton.style.display = "inline"
+            await cameraEnhancer.open();
+            await router.startCapturing("DetectDocumentBoundaries_Default");          
+          }
+          
+
+          async function startDetecting() {
+            cameraViewContainer.style.display = "inline-block";
+            await cameraEnhancer.open();
+            await router.startCapturing("DetectDocumentBoundaries_Default");
+            startDetectionButton.style.display = 'none';
+            loadButton.style.display = 'inline';
+            editButton.style.display = 'inline';
+            closeCameraButton.style.display = 'inline'
+        }
+
+        async function closeCamera(){
+            await cameraEnhancer.close();
+            await router.stopCapturing();
+            cameraViewContainer.style.display = 'none'
+            closeCameraButton.style.display = 'none'
+            startDetectionButton.style.display = 'inline';
+         }
+
+    </script>
+  </body>
+</html>
