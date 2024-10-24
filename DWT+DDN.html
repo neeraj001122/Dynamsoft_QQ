@@ -41,7 +41,7 @@
     <div id="div-image-container" style="display: none; width: 100%; height: 70vh"></div>
   </div>
     <script>
-      
+
       var DWObject, deviceList;
       let router;
       let cameraEnhancer;
@@ -61,13 +61,11 @@
             "#cameraViewContainer"
         );
     
-
-      //init DDN license and DWT license
+    
+      //init DDN license and DWT license together
       Dynamsoft.License.LicenseManager.initLicense(
-                ""
-        );
-
-       
+                "t0071hgAAABV2T6DxfY4kt75pQ7/kLBZOvN6KTk8L1uPMfE9zAnija/zs4lhPMtm/XFeWnUQjbNGGTsHhmDMaYD/PjX9wb797Guc="
+        )
         
 
       function Dynamsoft_OnReady() {
@@ -123,16 +121,19 @@
       //DDN image capture part
 
         (async function() {
+          //creating instances for DDN and DCE
             router = await Dynamsoft.CVR.CaptureVisionRouter.createInstance();
             let view = await Dynamsoft.DCE.CameraView.createInstance();
             cameraEnhancer = await Dynamsoft.DCE.CameraEnhancer.createInstance(
                 view
             );
+            //Instance for image editing part.
             imageEditorView = await Dynamsoft.DCE.ImageEditorView.createInstance(imageEditorViewContainer);
             layer = imageEditorView.createDrawingLayer();
             cameraViewContainer.append(view.getUIElement());
             router.setInput(cameraEnhancer);
 
+            //Allowing the SDK to return the original images
             let newSettings = await router.getSimplifiedSettings("DetectDocumentBoundaries_Default");
             newSettings.capturedResultItemTypes = Dynamsoft.Core.EnumCapturedResultItemType.CRIT_DETECTED_QUAD | Dynamsoft.Core.EnumCapturedResultItemType.CRIT_ORIGINAL_IMAGE;
             await router.updateSettings("DetectDocumentBoundaries_Default", newSettings)
@@ -150,7 +151,7 @@
         })();
 
 
-
+        //function to crop the image and show it to the user
         function edit() {
             if (!cameraEnhancer.isOpen() || items.length <= 1) return;
             /* Stops the detection task since we assume we have found a good boundary. */
@@ -174,7 +175,7 @@
             loadButton.style.display = "inline"
 
         }
-
+          //Loads the image in the viewer
           async function loadInViewer  () {
               /* Gets the selected quadrilateral. */
           let seletedItems = imageEditorView.getSelectedDrawingItems();
@@ -213,7 +214,7 @@
           /* Executes the normalization and shows the result on the page. */
           let normalizeResult = await router.capture(originalImageData, "NormalizeDocument_Default");
 
-          
+          //converting the image to blob and appending it to the DWT view 
            normalizeResult.items[0].toBlob().then((result) => {
             blob = result;
             DWObject.LoadImageFromBinary(result, () => {
